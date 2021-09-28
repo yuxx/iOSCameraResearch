@@ -108,8 +108,12 @@ final class ViewController: UIViewController {
                 print("photoOut is nil")
                 return
             }
-            photoOut.setPreparedPhotoSettingsArray([AVCapturePhotoSettings(from: [AVVideoCodecKey: AVVideoCodecType.jpeg])])
-            captureSession.addOutput(photoOut)
+            if #available(iOS 11.0, *) {
+                photoOut.setPreparedPhotoSettingsArray([AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])])
+            }
+            if captureSession.canAddOutput(photoOut) {
+                captureSession.addOutput(photoOut)
+            }
         } catch {
             print("error: \(error)")
         }
