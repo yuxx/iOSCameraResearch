@@ -1,133 +1,71 @@
 import UIKit
 import AVFoundation
+import SwiftUI
 
 // ref: https://qiita.com/t_okkan/items/f2ba9b7009b49fc2e30a
 final class ViewController: UIViewController {
-    var captureSession: AVCaptureSession = AVCaptureSession()
-
-    var backCamera: AVCaptureDevice?
-    var frontCamera: AVCaptureDevice?
-    var currentCamera: AVCaptureDevice?
-
-    var previewLayer: AVCaptureVideoPreviewLayer?
-
-//    @available(iOS 10.0, *)
-//    var photoOut: AVCapturePhotoOutput?
-    private var _photoOut: Any?
-    @available(iOS 10.0, *)
-    var photoOut: AVCapturePhotoOutput? {
-        get {
-            _photoOut as? AVCapturePhotoOutput
-        }
-        set {
-            _photoOut = newValue
-//            _photoOut = newValue as Any
-        }
-    }
+    let proceed2cameraButton: UIButton = UIButton()
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        setupAVCaptureSession()
-        setupAVCaptureDevice()
-        if #available(iOS 10.0, *) {
-            setupCameraIO()
-        }
-        captureSession.startRunning()
+        view.frame = CGRect(origin: .zero, size: UIScreen.main.bounds.size)
 
-        setupCameraView()
+        view.backgroundColor = .gray
+
+        setupButton()
     }
 
-    private func setupAVCaptureSession() {
-        captureSession.sessionPreset = .photo
-    }
+    private func setupButton() {
+        proceed2cameraButton.setTitle("To camera", for: .normal)
+        proceed2cameraButton.setTitleColor(.white, for: .normal)
+        proceed2cameraButton.backgroundColor = .green
+        proceed2cameraButton.addTarget(self, action: #selector(proceed2camera), for: .touchUpInside)
+        view.addSubview(proceed2cameraButton)
 
-    @available(iOS 10.0, *)
-    private func getAvailableDeviceTypes4Camera() -> [AVCaptureDevice.DeviceType] {
-        guard #available(iOS 10.2, *) else {
-            return [
-                .builtInWideAngleCamera,
-                .builtInTelephotoCamera,
-            ]
-        }
-        guard #available(iOS 11.1, *) else {
-            return [
-                .builtInDualCamera,
-                .builtInWideAngleCamera,
-                .builtInTelephotoCamera,
-            ]
-        }
-        guard #available(iOS 13.0, *) else {
-            return [
-                .builtInDualCamera,
-                .builtInWideAngleCamera,
-                .builtInTelephotoCamera,
-                .builtInTrueDepthCamera,
-            ]
-        }
-        return [
-            .builtInDualCamera,
-            .builtInDualWideCamera,
-            .builtInTripleCamera,
-            .builtInWideAngleCamera,
-            .builtInUltraWideCamera,
-            .builtInTelephotoCamera,
-            .builtInTrueDepthCamera,
-        ]
-    }
-
-    private func setupAVCaptureDevice() {
-        if #available(iOS 10.0, *) {
-            let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: getAvailableDeviceTypes4Camera(), mediaType: .video, position: .unspecified)
-            let devices = deviceDiscoverySession.devices
-            for device in devices {
-                switch device.position {
-                case .back:
-                    backCamera = device
-                case .front:
-                    frontCamera = device
-                case .unspecified: fallthrough
-                @unknown default:
-                    break
-                }
-            }
-            currentCamera = backCamera
+        // ref: https://qiita.com/yucovin/items/4bebcc7a8b1088b374c9
+        proceed2cameraButton.translatesAutoresizingMaskIntoConstraints = false
+        let centeringGuide = proceed2cameraButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
+        let topGuide: NSLayoutConstraint
+        if #available(iOS 11.0, *) {
+            topGuide = proceed2cameraButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 60)
         } else {
-            // todo:
-            let cameras = AVCaptureDevice.devices(for: AVMediaType.video)
+            topGuide = proceed2cameraButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 60)
+        }
+        let widthGuide = proceed2cameraButton.widthAnchor.constraint(equalToConstant: 300)
+        let heightGuide = proceed2cameraButton.heightAnchor.constraint(equalToConstant: 40)
+        NSLayoutConstraint.activate([centeringGuide, topGuide, widthGuide, heightGuide])
+    }
+
+    @objc private func proceed2camera(_ sender: UIButton) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        if #available(iOS 13.0, *) {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            let vc = Camera4iOS13OrAboveViewController()
+            vc.modalPresentationStyle = .fullScreen
+            present(vc, animated: true) {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            }
         }
     }
+}
 
-    @available(iOS 10.0, *)
-    private func setupCameraIO() {
-        do {
-            let captureInput = try AVCaptureDeviceInput(device: currentCamera!)
-            captureSession.addInput(captureInput)
-            photoOut = AVCapturePhotoOutput()
-            guard let photoOut = photoOut else {
-                print("photoOut is nil")
-                return
-            }
-            if #available(iOS 11.0, *) {
-                photoOut.setPreparedPhotoSettingsArray([AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])])
-            }
-            if captureSession.canAddOutput(photoOut) {
-                captureSession.addOutput(photoOut)
-            }
-        } catch {
-            print("error: \(error)")
-        }
+@available(iOS 13.0, *)
+final class ViewControllerRepresentable: UIViewControllerRepresentable {
+    typealias UIViewControllerType = ViewController
+
+    func makeUIViewController(context: Context) -> UIViewControllerType {
+        ViewController()
     }
 
-    private func setupPreviewLayer() {
-        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        previewLayer?.videoGravity = AVLayerVideoGravity.resizeAspectFill
-        previewLayer?.connection?.videoOrientation = .landscapeLeft
-        previewLayer?.frame = view.frame
-        view.layer.insertSublayer(previewLayer!, at: 0)
-    }
+    func updateUIViewController(_ uiViewController: UIViewControllerType, context: Context) {
 
-    private func setupCameraView() {
-        // todo:
+    }
+}
+
+@available(iOS 13.0, *)
+struct ViewController_Previews: PreviewProvider {
+    static var previews: some View {
+        ViewControllerRepresentable()
     }
 }

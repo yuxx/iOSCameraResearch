@@ -7,7 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		507F82064CF2845BF7567F47 /* Camera4iOS10OrAboveViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507F81BDFEB3E5B2ABD904E8 /* Camera4iOS10OrAboveViewController.swift */; };
+		507F8393CB6BC78C61BC92BB /* OldCameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507F85F826337EC7BBF1631D /* OldCameraViewController.swift */; };
 		507F84A8E6F469A0430030C6 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 507F8B2CE17F0A93B590C61A /* LaunchScreen.storyboard */; };
+		507F86F7A8DE5D36D5CFF4E7 /* Camera4iOS13OrAboveViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507F8138C58760C0A1B4E4C4 /* Camera4iOS13OrAboveViewController.swift */; };
 		507F8ACB96452973326E5400 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507F87A3C7D7280890A65C4A /* ViewController.swift */; };
 		507F8B90F7F3E2B9829B2F58 /* DebugLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507F83B78FCB4A2038F58769 /* DebugLog.swift */; };
 		507F8C228D281D1F5F24F9E9 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 507F80EA3DED8F1712E2E52E /* Main.storyboard */; };
@@ -18,7 +21,10 @@
 
 /* Begin PBXFileReference section */
 		507F80EA3DED8F1712E2E52E /* Main.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = Main.storyboard; sourceTree = "<group>"; };
+		507F8138C58760C0A1B4E4C4 /* Camera4iOS13OrAboveViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Camera4iOS13OrAboveViewController.swift; sourceTree = "<group>"; };
+		507F81BDFEB3E5B2ABD904E8 /* Camera4iOS10OrAboveViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Camera4iOS10OrAboveViewController.swift; sourceTree = "<group>"; };
 		507F83B78FCB4A2038F58769 /* DebugLog.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DebugLog.swift; sourceTree = "<group>"; };
+		507F85F826337EC7BBF1631D /* OldCameraViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = OldCameraViewController.swift; sourceTree = "<group>"; };
 		507F87A3C7D7280890A65C4A /* ViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
 		507F8B2CE17F0A93B590C61A /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		5D29167A270190EE0059E882 /* CameraResearch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CameraResearch.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -45,6 +51,9 @@
 				507F80EA3DED8F1712E2E52E /* Main.storyboard */,
 				507F8B2CE17F0A93B590C61A /* LaunchScreen.storyboard */,
 				507F87A3C7D7280890A65C4A /* ViewController.swift */,
+				507F8138C58760C0A1B4E4C4 /* Camera4iOS13OrAboveViewController.swift */,
+				507F81BDFEB3E5B2ABD904E8 /* Camera4iOS10OrAboveViewController.swift */,
+				507F85F826337EC7BBF1631D /* OldCameraViewController.swift */,
 			);
 			path = Scenes;
 			sourceTree = "<group>";
@@ -153,6 +162,9 @@
 				5D291680270190EE0059E882 /* SceneDelegate.swift in Sources */,
 				507F8B90F7F3E2B9829B2F58 /* DebugLog.swift in Sources */,
 				507F8ACB96452973326E5400 /* ViewController.swift in Sources */,
+				507F86F7A8DE5D36D5CFF4E7 /* Camera4iOS13OrAboveViewController.swift in Sources */,
+				507F82064CF2845BF7567F47 /* Camera4iOS10OrAboveViewController.swift in Sources */,
+				507F8393CB6BC78C61BC92BB /* OldCameraViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
