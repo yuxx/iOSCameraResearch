@@ -7,7 +7,7 @@ protocol PhotoShootDelegate {
 }
 
 @available(iOS 13.0, *)
-final class Camera4iOS13OrAboveViewController: UIViewController, PhotoShootDelegate {
+final class Camera4iOS13OrAboveViewController: UIViewController {
     var captureSession: AVCaptureSession = AVCaptureSession()
 
     var backCamera: AVCaptureDevice?
@@ -192,6 +192,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController, PhotoShootDeleg
         setupCloseButton()
         // todo: その他ボタンや表示
     }
+
     private func setupShootingButton() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         shootingButton.backgroundColor = .white
@@ -215,6 +216,11 @@ final class Camera4iOS13OrAboveViewController: UIViewController, PhotoShootDeleg
         shootingButtonPortraitUpsideDownOfBottomGuide = shootingButton.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         NSLayoutConstraint.activate([shootingButtonWidthGuide, shootingButtonHeightGuide])
         setupButtonLocation()
+    }
+
+    @objc private func shooting(_ sender: UIButton) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        shooting()
     }
 
     private func setupButtonLocation() {
@@ -262,27 +268,6 @@ final class Camera4iOS13OrAboveViewController: UIViewController, PhotoShootDeleg
         }
     }
 
-    @objc private func shooting(_ sender: UIButton) {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-        shooting()
-    }
-
-    func shooting() {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-        let settings = AVCapturePhotoSettings()
-        // NOTE: オートフラッシュ
-        settings.flashMode = .auto
-        // NOTE: 手ブレ補正 ON
-        settings.isAutoStillImageStabilizationEnabled = true
-        guard let photoOut = photoOut else {
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-                + "\nphotoOut is nil"
-                , level: .err)
-            return
-        }
-        photoOut.capturePhoto(with: settings, delegate: self)
-    }
-
     private func setupCloseButton() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         closeButton.setImage(UIImage(systemName: "multiply")?.withRenderingMode(.alwaysTemplate), for: .normal)
@@ -299,6 +284,25 @@ final class Camera4iOS13OrAboveViewController: UIViewController, PhotoShootDeleg
     @objc func closeCamera(_ sender: UIButton) {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         dismiss(animated: true)
+    }
+}
+
+@available(iOS 13.0, *)
+extension Camera4iOS13OrAboveViewController: PhotoShootDelegate {
+    func shooting() {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        let settings = AVCapturePhotoSettings()
+        // NOTE: オートフラッシュ
+        settings.flashMode = .auto
+        // NOTE: 手ブレ補正 ON
+        settings.isAutoStillImageStabilizationEnabled = true
+        guard let photoOut = photoOut else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nphotoOut is nil"
+                , level: .err)
+            return
+        }
+        photoOut.capturePhoto(with: settings, delegate: self)
     }
 }
 
