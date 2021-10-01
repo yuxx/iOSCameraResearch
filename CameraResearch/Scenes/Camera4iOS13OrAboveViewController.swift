@@ -30,17 +30,14 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     }
 
 
-    private var shootingButtonWidthGuide: NSLayoutConstraint!
-    private var shootingButtonHeightGuide: NSLayoutConstraint!
-    private var shootingButtonPortraitOfCenterXGuide: NSLayoutConstraint!
-    private var shootingButtonPortraitOfBottomGuide: NSLayoutConstraint!
-    private var shootingButtonLandscapeLeftOfCenterYGuide: NSLayoutConstraint!
-    private var shootingButtonLandscapeLeftOfRightGuide: NSLayoutConstraint!
-    private var shootingButtonLandscapeRightOfCenterYGuide: NSLayoutConstraint!
-    private var shootingButtonLandscapeRightOfRightGuide: NSLayoutConstraint!
-    private var shootingButtonPortraitUpsideDownOfCenterXGuide: NSLayoutConstraint! // not work on device with notch
-    private var shootingButtonPortraitUpsideDownOfBottomGuide: NSLayoutConstraint! // not work on device with notch
+    private var shootingButtonPortraitGuides: [NSLayoutConstraint]!
+    private var shootingButtonLandscapeLeftGuides: [NSLayoutConstraint]!
+    private var shootingButtonLandscapeRightYGuides: [NSLayoutConstraint]!
+    private var shootingButtonPortraitUpsideDownGuides: [NSLayoutConstraint]! // not work on device with notch
 
+    private var autoFocusAdjustTimer: Timer?
+
+    private let focusIndicator: UIView = UIView()
 
     override func viewDidLoad() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
@@ -53,10 +50,21 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
         setupPreviewLayer()
 
-        setupCameraView()
+        setupCameraControlButton()
+
+        setupFocusIndicator()
+
+        setupAutofocusTimer()
 
         // NOTE: 回転時の通知を設定して videoOrientation を変更
         NotificationCenter.default.addObserver(self, selector: #selector(onOrientationChanged), name: UIDevice.orientationDidChangeNotification, object: nil)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        if let autoFocusAdjustTimer = autoFocusAdjustTimer {
+            autoFocusAdjustTimer.invalidate()
+        }
+        super.viewDidDisappear(animated)
     }
 
     @objc private func onOrientationChanged() {
@@ -67,20 +75,14 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
                 , level: .err)
             return
         }
-        guard let connection = previewLayer?.connection else {
+        guard let previewLayer = previewLayer, let connection = previewLayer.connection else {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-                + "\npreviewLayer?.connection is nil"
+                + "\npreviewLayer or previewLayer?.connection is nil"
                 , level: .err)
             return
         }
         connection.videoOrientation = Self.getOrientationAsAVCaptureVideoOrientation()
 
-        guard let previewLayer = previewLayer else {
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-                + "\npreviewLayer is nil"
-                , level: .err)
-            return
-        }
         previewLayer.frame = view.frame
         setupButtonLocation()
     }
@@ -90,32 +92,57 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     }
 
     private func setupAVCaptureDevice() {
-        let deviceDiscoverySession = AVCaptureDevice.DiscoverySession(
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\nAVCaptureDevice.DeviceType"
+            + "\n.builtInTripleCamera   : \(AVCaptureDevice.DeviceType.builtInTripleCamera   .rawValue)"
+            + "\n.builtInDualCamera     : \(AVCaptureDevice.DeviceType.builtInDualCamera     .rawValue)"
+            + "\n.builtInDualWideCamera : \(AVCaptureDevice.DeviceType.builtInDualWideCamera .rawValue)"
+            + "\n.builtInWideAngleCamera: \(AVCaptureDevice.DeviceType.builtInWideAngleCamera.rawValue)"
+            + "\n.builtInUltraWideCamera: \(AVCaptureDevice.DeviceType.builtInUltraWideCamera.rawValue)"
+            + "\n.builtInTrueDepthCamera: \(AVCaptureDevice.DeviceType.builtInTrueDepthCamera.rawValue)"
+            + "\n.builtInTelephotoCamera: \(AVCaptureDevice.DeviceType.builtInTelephotoCamera.rawValue)"
+            , level: .dbg)
+        let backVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
             deviceTypes: [
-                .builtInDualCamera,
-                .builtInDualWideCamera,
-                .builtInTripleCamera,
-                .builtInWideAngleCamera,
-                .builtInUltraWideCamera,
-                .builtInTelephotoCamera,
-                .builtInTrueDepthCamera,
+                .builtInTripleCamera,    // 三眼
+                .builtInDualCamera,      // 二眼
+                .builtInDualWideCamera,  // 二眼広角
+                .builtInWideAngleCamera, // 広角(ノーマルカメラ)
+                .builtInUltraWideCamera, // 超広角
+                .builtInTelephotoCamera, // 望遠
             ],
             mediaType: .video,
-            position: .unspecified
+            position: .back
         )
-        let devices = deviceDiscoverySession.devices
-        for device in devices {
-            switch device.position {
-            case .back:
-                backCamera = device
-            case .front:
-                frontCamera = device
-            case .unspecified: fallthrough
-            @unknown default:
-                break
-            }
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\nbackVideoDeviceDiscoverySession.devices.count: \(backVideoDeviceDiscoverySession.devices.count)"
+            + "\n\tbackVideoDeviceDiscoverySession.devices: \(backVideoDeviceDiscoverySession.devices)"
+            , level: .dbg)
+        if let detectedBackCamera = backVideoDeviceDiscoverySession.devices.first {
+            backCamera = detectedBackCamera
+            currentCamera = backCamera
         }
-        currentCamera = backCamera
+
+        let frontVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [
+                .builtInWideAngleCamera, // 広角(ノーマルカメラ)
+                .builtInTrueDepthCamera, // トゥルーデプス
+            ],
+            mediaType: .video,
+            position: .front
+        )
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\nfrontVideoDeviceDiscoverySession.devices.count: \(frontVideoDeviceDiscoverySession.devices.count)"
+            + "\n\tfrontVideoDeviceDiscoverySession.devices: \(frontVideoDeviceDiscoverySession.devices)"
+            , level: .dbg)
+        if let detectedFrontCamera = frontVideoDeviceDiscoverySession.devices.first {
+            frontCamera = detectedFrontCamera
+        }
+
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\nfrontCamera: \(frontCamera)"
+            + "\nbackCamera: \(backCamera)"
+            , level: .dbg)
     }
 
     private func setupCameraIO() {
@@ -162,6 +189,12 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
             + "\nconnection.videoOrientation: \(connection.videoOrientation)"
             , level: .dbg)
+        view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapGesture(_:))))
+    }
+
+    @objc func tapGesture(_ gesture: UITapGestureRecognizer) {
+        let tappedPoint = gesture.location(in: gesture.view)
+        adjustAutoFocus(focusPoint: tappedPoint, focusMode: .autoFocus, exposeMode: .autoExpose)
     }
 
     static func getOrientationAsAVCaptureVideoOrientation() -> AVCaptureVideoOrientation {
@@ -186,11 +219,20 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         }
     }
 
-    private func setupCameraView() {
+    private func setupCameraControlButton() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         setupShootingButton()
         setupCloseButton()
         // todo: その他ボタンや表示
+        setupButtonLocation()
+    }
+
+    private func setupFocusIndicator() {
+        focusIndicator.frame = CGRect(x: 0, y: 0, width: view.bounds.width * 0.3, height: view.bounds.width * 0.3)
+        focusIndicator.layer.borderWidth = 1
+        focusIndicator.layer.borderColor = UIColor.systemYellow.cgColor
+        focusIndicator.isHidden = true
+        view.addSubview(focusIndicator)
     }
 
     private func setupShootingButton() {
@@ -200,22 +242,31 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         view.addSubview(shootingButton)
 
         shootingButton.translatesAutoresizingMaskIntoConstraints = false
-        shootingButtonWidthGuide = shootingButton.widthAnchor.constraint(equalToConstant: 60)
-        shootingButtonHeightGuide = shootingButton.heightAnchor.constraint(equalToConstant: 60)
 
-        shootingButtonPortraitOfCenterXGuide = shootingButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
-        shootingButtonPortraitOfBottomGuide = shootingButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -30)
+        shootingButtonPortraitGuides = [
+            shootingButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            shootingButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -30),
+        ]
 
-        shootingButtonLandscapeLeftOfCenterYGuide = shootingButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
-        shootingButtonLandscapeLeftOfRightGuide = shootingButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -30)
+        shootingButtonLandscapeLeftGuides = [
+            shootingButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            shootingButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -30),
+        ]
 
-        shootingButtonLandscapeRightOfCenterYGuide = shootingButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
-        shootingButtonLandscapeRightOfRightGuide = shootingButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 30)
+        shootingButtonLandscapeRightYGuides = [
+            shootingButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            shootingButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 30),
+        ]
 
-        shootingButtonPortraitUpsideDownOfCenterXGuide = shootingButton.centerXAnchor.constraint(equalTo: view.centerXAnchor)
-        shootingButtonPortraitUpsideDownOfBottomGuide = shootingButton.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        NSLayoutConstraint.activate([shootingButtonWidthGuide, shootingButtonHeightGuide])
-        setupButtonLocation()
+        shootingButtonPortraitUpsideDownGuides = [
+            shootingButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            shootingButton.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ]
+
+        NSLayoutConstraint.activate([
+            shootingButton.widthAnchor.constraint(equalToConstant: 60),
+            shootingButton.heightAnchor.constraint(equalToConstant: 60),
+        ])
     }
 
     @objc private func shooting(_ sender: UIButton) {
@@ -224,46 +275,27 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     }
 
     private func setupButtonLocation() {
-        NSLayoutConstraint.deactivate([
-            shootingButtonPortraitOfCenterXGuide,
-            shootingButtonPortraitOfBottomGuide,
-
-            shootingButtonLandscapeLeftOfCenterYGuide,
-            shootingButtonLandscapeLeftOfRightGuide,
-
-            shootingButtonLandscapeRightOfCenterYGuide,
-            shootingButtonLandscapeRightOfRightGuide,
-
-            shootingButtonPortraitUpsideDownOfCenterXGuide,
-            shootingButtonPortraitUpsideDownOfBottomGuide,
-        ])
+        NSLayoutConstraint.deactivate(
+            shootingButtonPortraitGuides
+                + shootingButtonLandscapeLeftGuides
+                + shootingButtonLandscapeRightYGuides
+                + shootingButtonPortraitUpsideDownGuides
+        )
         switch UIDevice.current.orientation {
         case .portraitUpsideDown:
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportraitUpsideDown", level: .dbg)
-            NSLayoutConstraint.activate([
-                shootingButtonPortraitUpsideDownOfCenterXGuide,
-                shootingButtonPortraitUpsideDownOfBottomGuide,
-            ])
+            NSLayoutConstraint.activate(shootingButtonPortraitUpsideDownGuides)
         case .landscapeLeft:
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeLeft", level: .dbg)
-            NSLayoutConstraint.activate([
-                shootingButtonLandscapeLeftOfCenterYGuide,
-                shootingButtonLandscapeLeftOfRightGuide,
-            ])
+            NSLayoutConstraint.activate(shootingButtonLandscapeLeftGuides)
             return
         case .landscapeRight:
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeRight", level: .dbg)
-            NSLayoutConstraint.activate([
-                shootingButtonLandscapeRightOfCenterYGuide,
-                shootingButtonLandscapeRightOfRightGuide,
-            ])
+            NSLayoutConstraint.activate(shootingButtonLandscapeRightYGuides)
             return
         default:
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportrait", level: .dbg)
-            NSLayoutConstraint.activate([
-                shootingButtonPortraitOfCenterXGuide,
-                shootingButtonPortraitOfBottomGuide,
-            ])
+            NSLayoutConstraint.activate(shootingButtonPortraitGuides)
             return
         }
     }
@@ -272,18 +304,104 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         closeButton.setImage(UIImage(systemName: "multiply")?.withRenderingMode(.alwaysTemplate), for: .normal)
         closeButton.tintColor = .white
+        closeButton.sizeToFit()
+        closeButton.imageView?.contentMode = .scaleAspectFit
+        closeButton.contentHorizontalAlignment = .fill
+        closeButton.contentVerticalAlignment = .fill
         closeButton.addTarget(self, action: #selector(closeCamera), for: .touchUpInside)
         view.addSubview(closeButton)
 
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        let topGuide = closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor)
-        let trailingGuide = closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -30)
-        NSLayoutConstraint.activate([topGuide, trailingGuide])
+
+        NSLayoutConstraint.activate([
+            closeButton.widthAnchor.constraint(equalToConstant: 30),
+            closeButton.heightAnchor.constraint(equalToConstant: 30),
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 10),
+            closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -30),
+        ])
     }
 
     @objc func closeCamera(_ sender: UIButton) {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         dismiss(animated: true)
+    }
+
+    private func setupAutofocusTimer() {
+        guard autoFocusAdjustTimer == nil else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nAlready set observed timer."
+                , level: .err)
+            return
+        }
+        autoFocusAdjustTimer = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(adjustAutoFocus(_:)), userInfo: nil, repeats: true)
+    }
+
+    @objc func adjustAutoFocus(_ timer: Timer) {
+        adjustAutoFocus(focusPoint: view.center, focusMode: .continuousAutoFocus, exposeMode: .continuousAutoExposure)
+    }
+
+    // ref: https://qiita.com/jumperson/items/723737ed497fe2c6f2aa
+    private func adjustAutoFocus(focusPoint: CGPoint, focusMode: AVCaptureDevice.FocusMode, exposeMode: AVCaptureDevice.ExposureMode) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        focusIndicator.center = focusPoint // タップしたポイントへ移動する
+        focusIndicator.isHidden = false // 現れる
+        UIViewPropertyAnimator.runningPropertyAnimator(withDuration: 0.5, delay: 0, options: []) {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            self.focusIndicator.frame = CGRect(
+                x: focusPoint.x - (self.view.bounds.width * 0.075),
+                y: focusPoint.y - (self.view.bounds.width * 0.075),
+                width: (self.view.bounds.width * 0.15),
+                height: (self.view.bounds.width * 0.15)
+            ) // タップしたポイントに向けて縮む
+        } completion: { (UIViewAnimatingPosition) in
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { (Timer) in
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+                self.focusIndicator.isHidden = true // 少し待ってから消える
+                self.focusIndicator.frame.size = CGSize(
+                    width: self.view.bounds.width * 0.3,
+                    height: self.view.bounds.width * 0.3
+                ) // 少し大きめのサイズに戻しておく
+            }
+        }
+
+        guard let currentCamera = currentCamera else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nNo active camera found."
+                , level: .err)
+            return
+        }
+        do {
+            try currentCamera.lockForConfiguration()
+        } catch {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nfailed to lock for configuration for current camera."
+                , level: .err)
+        }
+
+        guard let previewLayer = previewLayer else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\npreview layer is nil."
+                , level: .err)
+            return
+        }
+        let focusPoint4CaptureDevice = previewLayer.captureDevicePointConverted(fromLayerPoint: focusPoint)
+
+        // NOTE: フォーカス調整
+        if currentCamera.isFocusPointOfInterestSupported && currentCamera.isFocusModeSupported(focusMode) {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            currentCamera.focusMode = focusMode
+            currentCamera.focusPointOfInterest = focusPoint4CaptureDevice
+        }
+
+        // NOTE: 露光調整
+        if currentCamera.isExposurePointOfInterestSupported && currentCamera.isExposureModeSupported(exposeMode) {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            currentCamera.exposureMode = exposeMode
+            currentCamera.exposurePointOfInterest = focusPoint4CaptureDevice
+        }
+
+        currentCamera.unlockForConfiguration()
     }
 }
 
