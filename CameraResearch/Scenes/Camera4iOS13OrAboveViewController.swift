@@ -1,6 +1,7 @@
 import UIKit
 import AVFoundation
 import SwiftUI
+import CoreMotion
 
 protocol PhotoShootDelegate {
     func shooting() -> Void
@@ -29,15 +30,16 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         }
     }
 
-
     private var shootingButtonPortraitGuides: [NSLayoutConstraint]!
     private var shootingButtonLandscapeLeftGuides: [NSLayoutConstraint]!
     private var shootingButtonLandscapeRightYGuides: [NSLayoutConstraint]!
     private var shootingButtonPortraitUpsideDownGuides: [NSLayoutConstraint]! // not work on device with notch
 
     private var autoFocusAdjustTimer: Timer?
-
     private let focusIndicator: UIView = UIView()
+    private let coreMotionManager: CMMotionManager = CMMotionManager()
+    private var lastTouchFocusDate: Date?
+
 
     override func viewDidLoad() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
@@ -54,16 +56,18 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
         setupFocusIndicator()
 
-        setupAutofocusTimer()
-
         // NOTE: 回転時の通知を設定して videoOrientation を変更
         NotificationCenter.default.addObserver(self, selector: #selector(onOrientationChanged), name: UIDevice.orientationDidChangeNotification, object: nil)
+
+        startMotionAutoFocus()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         if let autoFocusAdjustTimer = autoFocusAdjustTimer {
             autoFocusAdjustTimer.invalidate()
         }
+        captureSession.stopRunning()
+        stopMotionAutoFocus()
         super.viewDidDisappear(animated)
     }
 
@@ -176,6 +180,9 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
                 , level: .err)
             return
         }
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\npreviewLayer.frame: \(previewLayer.frame)"
+            , level: .dbg)
         previewLayer.videoGravity = AVLayerVideoGravity.resizeAspect
         guard let connection = previewLayer.connection else {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
@@ -193,6 +200,9 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     }
 
     @objc func tapGesture(_ gesture: UITapGestureRecognizer) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\ngesture.view?.frame: \(gesture.view?.frame)"
+            , level: .dbg)
         let tappedPoint = gesture.location(in: gesture.view)
         adjustAutoFocus(focusPoint: tappedPoint, focusMode: .autoFocus, exposeMode: .autoExpose)
     }
@@ -326,25 +336,61 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         dismiss(animated: true)
     }
 
-    private func setupAutofocusTimer() {
-        guard autoFocusAdjustTimer == nil else {
+    // ref: https://qiita.com/jumperson/items/723737ed497fe2c6f2aa
+    private func startMotionAutoFocus() {
+        guard coreMotionManager.isAccelerometerAvailable else {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-                + "\nAlready set observed timer."
+                + "\nAccelerometer is not available."
                 , level: .err)
             return
         }
-        autoFocusAdjustTimer = Timer.scheduledTimer(timeInterval: 5, target: self, selector: #selector(adjustAutoFocus(_:)), userInfo: nil, repeats: true)
+        coreMotionManager.accelerometerUpdateInterval = 0.1
+
+        guard let queue = OperationQueue.current else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nCurrent operation queue is not available."
+                , level: .err)
+            return
+        }
+
+        coreMotionManager.startAccelerometerUpdates(to: queue) { [weak self] accelerometerData, error in
+            if let error = error {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                    + "\nerror: \(error)"
+                    , level: .err)
+                return
+            }
+            guard let acceleration = accelerometerData?.acceleration else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                    + "\nNo acceleration found."
+                    , level: .err)
+                return
+            }
+            let intensity = abs(acceleration.x) + abs(acceleration.y) + abs(acceleration.z)
+            guard intensity > 1.5 else {
+                return
+            }
+            guard let self = self else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                    + "\nSelf is nil."
+                    , level: .err)
+                return
+            }
+            self.adjustAutoFocus(focusPoint: self.view.center, focusMode: .continuousAutoFocus, exposeMode: .continuousAutoExposure)
+        }
     }
 
-    @objc func adjustAutoFocus(_ timer: Timer) {
-        adjustAutoFocus(focusPoint: view.center, focusMode: .continuousAutoFocus, exposeMode: .continuousAutoExposure)
+    private func stopMotionAutoFocus() {
+        if coreMotionManager.isAccelerometerActive {
+            coreMotionManager.stopAccelerometerUpdates()
+        }
     }
 
     // ref: https://qiita.com/jumperson/items/723737ed497fe2c6f2aa
     private func adjustAutoFocus(focusPoint: CGPoint, focusMode: AVCaptureDevice.FocusMode, exposeMode: AVCaptureDevice.ExposureMode) {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-        focusIndicator.center = focusPoint // タップしたポイントへ移動する
-        focusIndicator.isHidden = false // 現れる
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tfocusPoint: \(focusPoint)", level: .dbg)
+        focusIndicator.center = focusPoint
+        focusIndicator.isHidden = false
         UIViewPropertyAnimator.runningPropertyAnimator(withDuration: 0.5, delay: 0, options: []) {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
             self.focusIndicator.frame = CGRect(
@@ -352,16 +398,16 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
                 y: focusPoint.y - (self.view.bounds.width * 0.075),
                 width: (self.view.bounds.width * 0.15),
                 height: (self.view.bounds.width * 0.15)
-            ) // タップしたポイントに向けて縮む
+            )
         } completion: { (UIViewAnimatingPosition) in
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
             Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { (Timer) in
                 debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-                self.focusIndicator.isHidden = true // 少し待ってから消える
+                self.focusIndicator.isHidden = true
                 self.focusIndicator.frame.size = CGSize(
                     width: self.view.bounds.width * 0.3,
                     height: self.view.bounds.width * 0.3
-                ) // 少し大きめのサイズに戻しておく
+                )
             }
         }
 
