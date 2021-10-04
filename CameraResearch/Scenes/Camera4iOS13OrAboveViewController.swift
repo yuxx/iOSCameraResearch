@@ -16,7 +16,14 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     enum FrontCameraMode {
         case normalWideAngle
             , trueDepth
-            , none
+        var captureDevices: [AVCaptureDevice.DeviceType] {
+            switch self {
+            case .normalWideAngle:
+                return [.builtInWideAngleCamera]
+            case .trueDepth:
+                return [.builtInTrueDepthCamera]
+            }
+        }
     }
     enum BackCameraMode {
         case normalWideAngle
@@ -25,11 +32,27 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             , triple
             , ultraWide
             , telescope
-            , none
+        var captureDevices: [AVCaptureDevice.DeviceType] {
+            switch self {
+            case .normalWideAngle:
+                return [.builtInWideAngleCamera]
+            case .dual:
+                return [.builtInDualCamera]
+            case .dualWideAngle:
+                return [.builtInDualWideCamera]
+            case .triple:
+                return [.builtInTripleCamera]
+            case .ultraWide:
+                return [.builtInUltraWideCamera]
+            case .telescope:
+                return [.builtInTelephotoCamera]
+            }
+        }
     }
     private var defaultCameraSide: CameraSide
-    private var frontCameraMode: FrontCameraMode
-    private var backCameraMode: BackCameraMode
+    private var currentCameraSide: CameraSide
+    private var frontCameraMode: FrontCameraMode?
+    private var backCameraMode: BackCameraMode?
     private var captureSession: AVCaptureSession = AVCaptureSession()
 
     private var backCamera: AVCaptureDevice?
@@ -66,11 +89,17 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     private var exZoomFactor: CGFloat = 1.0
     private var cameraObservation: NSKeyValueObservation?
 
-    init(defaultCameraSide: CameraSide, frontCameraMode: FrontCameraMode, backCameraMode: BackCameraMode) {
+    init(defaultCameraSide: CameraSide, frontCameraMode: FrontCameraMode?, backCameraMode: BackCameraMode?) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\ndefaultCameraSide: \(defaultCameraSide)"
+            + "\nfrontCameraMode: \(frontCameraMode)"
+            + "\nbackCameraMode: \(backCameraMode)"
+            , level: .dbg)
         self.defaultCameraSide = defaultCameraSide
+        currentCameraSide = defaultCameraSide
         self.frontCameraMode = frontCameraMode
         self.backCameraMode = backCameraMode
-        
+
         super.init(nibName: nil, bundle: nil)
     }
     
@@ -81,6 +110,19 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     override func viewDidLoad() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         super.viewDidLoad()
+
+        switch defaultCameraSide {
+        case .front:
+            guard frontCameraMode != nil else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+                return
+            }
+        case .back:
+            guard backCameraMode != nil else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+                return
+            }
+        }
 
         setupAVCaptureSession()
         setupAVCaptureDevice()
@@ -99,7 +141,24 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         startMotionAutoFocus()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        super.viewWillAppear(animated)
+        if currentCamera == nil {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+            let alertVC = UIAlertController(title: "エラー", message: "そのカメラモードはこの端末に存在しません", preferredStyle: .alert)
+            alertVC.addAction(UIAlertAction(title: "閉じる", style: .default) { [weak self] action in
+                if let self = self {
+                    self.dismiss(animated: true)
+                }
+            })
+            present(alertVC, animated: true)
+
+        }
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         if let autoFocusAdjustTimer = autoFocusAdjustTimer {
             autoFocusAdjustTimer.invalidate()
         }
@@ -143,72 +202,99 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             + "\n.builtInTrueDepthCamera: \(AVCaptureDevice.DeviceType.builtInTrueDepthCamera.rawValue)"
             + "\n.builtInTelephotoCamera: \(AVCaptureDevice.DeviceType.builtInTelephotoCamera.rawValue)"
             , level: .dbg)
-        let backVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [
-//                .builtInTripleCamera,    // 三眼
-//                .builtInDualCamera,      // 二眼
-//                .builtInDualWideCamera,  // 二眼広角
-                .builtInWideAngleCamera, // 広角(ノーマルカメラ)
-                .builtInUltraWideCamera, // 超広角
-                .builtInTelephotoCamera, // 望遠
-            ],
-            mediaType: .video,
-            position: .back
-        )
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-            + "\nbackVideoDeviceDiscoverySession.devices.count: \(backVideoDeviceDiscoverySession.devices.count)"
-            + "\n\tbackVideoDeviceDiscoverySession.devices: \(backVideoDeviceDiscoverySession.devices)"
-            , level: .dbg)
-        if let detectedBackCamera = backVideoDeviceDiscoverySession.devices.first {
-            backCamera = detectedBackCamera
-            currentCamera = backCamera
-        }
-
-        let frontVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [
-                .builtInWideAngleCamera, // 広角(ノーマルカメラ)
-                .builtInTrueDepthCamera, // トゥルーデプス
-            ],
-            mediaType: .video,
-            position: .front
-        )
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-            + "\nfrontVideoDeviceDiscoverySession.devices.count: \(frontVideoDeviceDiscoverySession.devices.count)"
-            + "\n\tfrontVideoDeviceDiscoverySession.devices: \(frontVideoDeviceDiscoverySession.devices)"
-            , level: .dbg)
-        if let detectedFrontCamera = frontVideoDeviceDiscoverySession.devices.first {
-            frontCamera = detectedFrontCamera
-        }
-
-        if let currentCamera = currentCamera {
-            exZoomFactor = currentCamera.videoZoomFactor
+        if let backCameraMode = backCameraMode {
+            let backVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: backCameraMode.captureDevices,
+                mediaType: .video,
+                position: .back
+            )
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-                + "\n\tfrontCamera: \(frontCamera)"
-                + "\n\tbackCamera: \(backCamera)"
-                + "\n\tcurrentCamera: \(currentCamera)"
-                + "\n\t\t.videoZoomFactor: \(currentCamera.videoZoomFactor)"
-                + "\n\t\t.minAvailableVideoZoomFactor: \(currentCamera.minAvailableVideoZoomFactor)"
-                + "\n\t\t.maxAvailableVideoZoomFactor: \(currentCamera.maxAvailableVideoZoomFactor)"
-                + "\n\t\t.activeFormat.videoMaxZoomFactor: \(currentCamera.activeFormat.videoMaxZoomFactor)"
+                + "\nbackVideoDeviceDiscoverySession.devices.count: \(backVideoDeviceDiscoverySession.devices.count)"
+                + "\n\tbackVideoDeviceDiscoverySession.devices: \(backVideoDeviceDiscoverySession.devices)"
                 , level: .dbg)
-            cameraObservation = currentCamera.observe(\.isConnected) { [weak self] camera, changeValue in
-                guard let self = self, let isConnected = changeValue.newValue, isConnected else {
-                    debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+            if let detectedBackCamera = backVideoDeviceDiscoverySession.devices.first {
+                backCamera = detectedBackCamera
+            }
+        }
+
+        if let frontCameraMode = frontCameraMode {
+            let frontVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: frontCameraMode.captureDevices,
+                mediaType: .video,
+                position: .front
+            )
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nfrontVideoDeviceDiscoverySession.devices.count: \(frontVideoDeviceDiscoverySession.devices.count)"
+                + "\n\tfrontVideoDeviceDiscoverySession.devices: \(frontVideoDeviceDiscoverySession.devices)"
+                , level: .dbg)
+            if let detectedFrontCamera = frontVideoDeviceDiscoverySession.devices.first {
+                frontCamera = detectedFrontCamera
+            }
+        }
+
+        if currentCameraSide == .back {
+            if backCamera != nil {
+                currentCamera = backCamera
+            } else {
+                guard frontCamera != nil else {
+                    debuglog("\(String(describing: Self.self))::\(#function)@\(#line) FATAL", level: .err)
+                    dismiss(animated: true)
                     return
                 }
-                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-                self.modifyZoomFactor(byScale: 2, isFix: true)
-                if let cameraObservation = self.cameraObservation {
-                    cameraObservation.invalidate()
-                }
+                defaultCameraSide = .front
+                currentCameraSide = .front
+                currentCamera = frontCamera
             }
-//            currentCamera.isConnected
+        } else {
+            if frontCamera != nil {
+                currentCamera = frontCamera
+            } else {
+                guard backCamera != nil else {
+                    debuglog("\(String(describing: Self.self))::\(#function)@\(#line) FATAL", level: .err)
+                    dismiss(animated: true)
+                    return
+                }
+                defaultCameraSide = .back
+                currentCameraSide = .back
+                currentCamera = backCamera
+            }
+        }
+
+        guard let currentCamera = currentCamera else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line) FATAL", level: .err)
+            dismiss(animated: true)
+            return
+        }
+        exZoomFactor = currentCamera.videoZoomFactor
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\n\tfrontCamera: \(frontCamera)"
+            + "\n\tbackCamera: \(backCamera)"
+            + "\n\tcurrentCamera: \(currentCamera)"
+            + "\n\t\t.videoZoomFactor: \(currentCamera.videoZoomFactor)"
+            + "\n\t\t.minAvailableVideoZoomFactor: \(currentCamera.minAvailableVideoZoomFactor)"
+            + "\n\t\t.maxAvailableVideoZoomFactor: \(currentCamera.maxAvailableVideoZoomFactor)"
+            + "\n\t\t.activeFormat.videoMaxZoomFactor: \(currentCamera.activeFormat.videoMaxZoomFactor)"
+            , level: .dbg)
+        cameraObservation = currentCamera.observe(\.isConnected) { [weak self] camera, changeValue in
+            guard let self = self, let isConnected = changeValue.newValue, isConnected else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+                return
+            }
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            self.modifyZoomFactor(byScale: 2, isFix: true)
+            if let cameraObservation = self.cameraObservation {
+                cameraObservation.invalidate()
+            }
         }
     }
 
     private func setupCameraIO() {
+        guard let currentCamera = currentCamera else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+            return
+        }
         do {
-            let captureInput = try AVCaptureDeviceInput(device: currentCamera!)
+            let captureInput = try AVCaptureDeviceInput(device: currentCamera)
             captureSession.addInput(captureInput)
             photoOut = AVCapturePhotoOutput()
             guard let photoOut = photoOut else {
@@ -266,15 +352,6 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     }
 
     @objc func pinchGesture(_ gesture: UIPinchGestureRecognizer) {
-//        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-//            + "\ngesture.scale: \(gesture.scale)"
-//            + "\ngesture.velocity: \(gesture.velocity)"
-//            , level: .dbg)
-//        guard gesture.state == UIPinchGestureRecognizer.State.ended else {
-//            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
-//            return
-//        }
-//        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         modifyZoomFactor(byScale: gesture.scale, isFix: gesture.state == UIPinchGestureRecognizer.State.ended)
     }
 
