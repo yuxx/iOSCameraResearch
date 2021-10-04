@@ -8,19 +8,40 @@ protocol PhotoShootDelegate {
 
 @available(iOS 13.0, *)
 final class Camera4iOS13OrAboveViewController: UIViewController {
-    var captureSession: AVCaptureSession = AVCaptureSession()
+    enum CameraSide {
+        case front
+            , back
+    }
+    enum FrontCameraMode {
+        case normalWideAngle
+            , trueDepth
+            , none
+    }
+    enum BackCameraMode {
+        case normalWideAngle
+            , dual
+            , dualWideAngle
+            , triple
+            , ultraWide
+            , telescope
+            , none
+    }
+    private var defaultCameraSide: CameraSide
+    private var frontCameraMode: FrontCameraMode
+    private var backCameraMode: BackCameraMode
+    private var captureSession: AVCaptureSession = AVCaptureSession()
 
-    var backCamera: AVCaptureDevice?
-    var frontCamera: AVCaptureDevice?
-    var currentCamera: AVCaptureDevice?
+    private var backCamera: AVCaptureDevice?
+    private var frontCamera: AVCaptureDevice?
+    private var currentCamera: AVCaptureDevice?
 
-    var previewLayer: AVCaptureVideoPreviewLayer?
+    private var previewLayer: AVCaptureVideoPreviewLayer?
 
-    let shootingButton: UIButton = UIButton()
-    let closeButton: UIButton = UIButton()
+    private let shootingButton: UIButton = UIButton()
+    private let closeButton: UIButton = UIButton()
 
     private var _photoOut: Any?
-    var photoOut: AVCapturePhotoOutput? {
+    private var photoOut: AVCapturePhotoOutput? {
         get {
             _photoOut as? AVCapturePhotoOutput
         }
@@ -39,6 +60,22 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
     private let focusIndicator: UIView = UIView()
 
+    private let sessionQueue: DispatchQueue = DispatchQueue(label: "session queue")
+    private var exZoomFactor: CGFloat = 1.0
+    private var cameraObservation: NSKeyValueObservation?
+
+    init(defaultCameraSide: CameraSide, frontCameraMode: FrontCameraMode, backCameraMode: BackCameraMode) {
+        self.defaultCameraSide = defaultCameraSide
+        self.frontCameraMode = frontCameraMode
+        self.backCameraMode = backCameraMode
+        
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
     override func viewDidLoad() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         super.viewDidLoad()
@@ -104,9 +141,9 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             , level: .dbg)
         let backVideoDeviceDiscoverySession = AVCaptureDevice.DiscoverySession(
             deviceTypes: [
-                .builtInTripleCamera,    // 三眼
-                .builtInDualCamera,      // 二眼
-                .builtInDualWideCamera,  // 二眼広角
+//                .builtInTripleCamera,    // 三眼
+//                .builtInDualCamera,      // 二眼
+//                .builtInDualWideCamera,  // 二眼広角
                 .builtInWideAngleCamera, // 広角(ノーマルカメラ)
                 .builtInUltraWideCamera, // 超広角
                 .builtInTelephotoCamera, // 望遠
@@ -139,10 +176,30 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             frontCamera = detectedFrontCamera
         }
 
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-            + "\nfrontCamera: \(frontCamera)"
-            + "\nbackCamera: \(backCamera)"
-            , level: .dbg)
+        if let currentCamera = currentCamera {
+            exZoomFactor = currentCamera.videoZoomFactor
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\n\tfrontCamera: \(frontCamera)"
+                + "\n\tbackCamera: \(backCamera)"
+                + "\n\tcurrentCamera: \(currentCamera)"
+                + "\n\t\t.videoZoomFactor: \(currentCamera.videoZoomFactor)"
+                + "\n\t\t.minAvailableVideoZoomFactor: \(currentCamera.minAvailableVideoZoomFactor)"
+                + "\n\t\t.maxAvailableVideoZoomFactor: \(currentCamera.maxAvailableVideoZoomFactor)"
+                + "\n\t\t.activeFormat.videoMaxZoomFactor: \(currentCamera.activeFormat.videoMaxZoomFactor)"
+                , level: .dbg)
+            cameraObservation = currentCamera.observe(\.isConnected) { [weak self] camera, changeValue in
+                guard let self = self, let isConnected = changeValue.newValue, isConnected else {
+                    debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+                    return
+                }
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+                self.modifyZoomFactor(byScale: 2, isFix: true)
+                if let cameraObservation = self.cameraObservation {
+                    cameraObservation.invalidate()
+                }
+            }
+//            currentCamera.isConnected
+        }
     }
 
     private func setupCameraIO() {
@@ -190,11 +247,79 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             + "\nconnection.videoOrientation: \(connection.videoOrientation)"
             , level: .dbg)
         view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapGesture(_:))))
+        view.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinchGesture(_:))))
     }
 
     @objc func tapGesture(_ gesture: UITapGestureRecognizer) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         let tappedPoint = gesture.location(in: gesture.view)
         adjustAutoFocus(focusPoint: tappedPoint, focusMode: .autoFocus, exposeMode: .autoExpose)
+    }
+
+    @objc func pinchGesture(_ gesture: UIPinchGestureRecognizer) {
+//        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+//            + "\ngesture.scale: \(gesture.scale)"
+//            + "\ngesture.velocity: \(gesture.velocity)"
+//            , level: .dbg)
+//        guard gesture.state == UIPinchGestureRecognizer.State.ended else {
+//            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+//            return
+//        }
+//        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        modifyZoomFactor(byScale: gesture.scale, isFix: gesture.state == UIPinchGestureRecognizer.State.ended)
+    }
+
+    // ref: https://qiita.com/touyu/items/6fd26a35212e75f98c6b
+    private func modifyZoomFactor(byScale pinchScale: CGFloat, isFix: Bool) {
+        guard let currentCamera = currentCamera else {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nNo active camera found."
+                , level: .err)
+            return
+        }
+        do {
+            try currentCamera.lockForConfiguration()
+        } catch {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nfailed to lock for configuration for current camera."
+                , level: .err)
+            return
+        }
+
+        var newZoomFactor: CGFloat = currentCamera.videoZoomFactor
+        defer {
+            currentCamera.videoZoomFactor = newZoomFactor
+            currentCamera.unlockForConfiguration()
+        }
+
+        if pinchScale > 1.0 {
+            newZoomFactor = exZoomFactor + pinchScale - 1
+        } else {
+            newZoomFactor = exZoomFactor - (1 - pinchScale) * exZoomFactor
+        }
+
+        if newZoomFactor < currentCamera.minAvailableVideoZoomFactor {
+            newZoomFactor = currentCamera.minAvailableVideoZoomFactor
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nVideo scale factor capped to \(newZoomFactor)."
+                , level: .dbg)
+        } else if newZoomFactor > currentCamera.maxAvailableVideoZoomFactor {
+            newZoomFactor = currentCamera.maxAvailableVideoZoomFactor
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nVideo scale factor capped to \(newZoomFactor)."
+                , level: .dbg)
+        }
+
+        if isFix {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+                + "\nFix video scale factor from \(exZoomFactor) to \(newZoomFactor)"
+                + "\n\t\t.videoZoomFactor: \(currentCamera.videoZoomFactor)"
+                + "\n\t\t.minAvailableVideoZoomFactor: \(currentCamera.minAvailableVideoZoomFactor)"
+                + "\n\t\t.maxAvailableVideoZoomFactor: \(currentCamera.maxAvailableVideoZoomFactor)"
+                + "\n\t\t.activeFormat.videoMaxZoomFactor: \(currentCamera.activeFormat.videoMaxZoomFactor)"
+                , level: .dbg)
+            exZoomFactor = newZoomFactor
+        }
     }
 
     static func getOrientationAsAVCaptureVideoOrientation() -> AVCaptureVideoOrientation {
@@ -377,6 +502,10 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
                 + "\nfailed to lock for configuration for current camera."
                 , level: .err)
+            return
+        }
+        defer {
+            currentCamera.unlockForConfiguration()
         }
 
         guard let previewLayer = previewLayer else {
@@ -400,8 +529,6 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             currentCamera.exposureMode = exposeMode
             currentCamera.exposurePointOfInterest = focusPoint4CaptureDevice
         }
-
-        currentCamera.unlockForConfiguration()
     }
 }
 
@@ -449,7 +576,7 @@ extension Camera4iOS13OrAboveViewController: AVCapturePhotoCaptureDelegate {
 @available(iOS 13.0, *)
 final class Camera4iOS13OrAboveViewControllerRepresentable: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> Camera4iOS13OrAboveViewController {
-        Camera4iOS13OrAboveViewController()
+        Camera4iOS13OrAboveViewController(defaultCameraSide: .front, frontCameraMode: .normalWideAngle, backCameraMode: .normalWideAngle)
     }
 
     func updateUIViewController(_ uiViewController: Camera4iOS13OrAboveViewController, context: Context) {
