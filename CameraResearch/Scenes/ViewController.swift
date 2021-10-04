@@ -10,6 +10,9 @@ final class ViewController: UIViewController {
     let proceed2tripleCameraButton: UIButton = UIButton()
     let proceed2ultraWideCameraButton: UIButton = UIButton()
     let proceed2telescopeCameraButton: UIButton = UIButton()
+    let proceed2frontCameraButton: UIButton = UIButton()
+    let proceed2trueDepthCameraButton: UIButton = UIButton()
+    let proceed2backAndFrontCameraButton: UIButton = UIButton()
 
     enum Mode: Int {
         case backOnly = 0
@@ -31,7 +34,6 @@ final class ViewController: UIViewController {
 
         view.frame = CGRect(origin: .zero, size: UIScreen.main.bounds.size)
 
-//        view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scrollView)
         scrollView.addSubview(contentView)
 
@@ -44,10 +46,10 @@ final class ViewController: UIViewController {
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor).isActive = true
         contentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.heightAnchor).isActive = true
-        contentView.topAnchor.constraint(equalTo: scrollView.topAnchor).isActive = true
+        contentView.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: -safeAreaTop).isActive = true
         contentView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor).isActive = true
         contentView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor).isActive = true
-        contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor).isActive = true
+        contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: safeAreaBottom).isActive = true
 
         view.backgroundColor = .white
         scrollView.backgroundColor = .lightGray
@@ -78,13 +80,15 @@ final class ViewController: UIViewController {
         NSLayoutConstraint.activate([centeringGuide, topGuide, widthGuide, heightGuide])
 
         addButton(button: proceed2dualCameraButton, title: "二眼カメラ", topAnchorTarget: proceed2normalCameraButton, mode: .dualOnly)
-        addButton(button: proceed2dualCameraButton, title: "二眼広角カメラ", topAnchorTarget: proceed2normalCameraButton, mode: .dualWideOnly)
-        addButton(button: proceed2dualCameraButton, title: "三眼カメラ", topAnchorTarget: proceed2normalCameraButton, mode: .tripleOnly)
-        addButton(button: proceed2dualCameraButton, title: "超広角カメラ", topAnchorTarget: proceed2normalCameraButton, mode: .ultraWideOnly)
-        addButton(button: proceed2dualCameraButton, title: "望遠カメラ", topAnchorTarget: proceed2normalCameraButton, mode: .telescopeOnly)
-        addButton(button: proceed2dualCameraButton, title: "フロントカメラ", topAnchorTarget: proceed2normalCameraButton, mode: .frontOnly)
-        addButton(button: proceed2dualCameraButton, title: "トゥルーデプスカメラ", topAnchorTarget: proceed2normalCameraButton, mode: .trueDepthOnly)
-        addButton(button: proceed2dualCameraButton, title: "ノーマルバック&フロントカメラ", topAnchorTarget: proceed2normalCameraButton, mode: .backAndFront)
+        addButton(button: proceed2dualWideCameraButton, title: "二眼広角カメラ", topAnchorTarget: proceed2dualCameraButton, mode: .dualWideOnly)
+        addButton(button: proceed2tripleCameraButton, title: "三眼カメラ", topAnchorTarget: proceed2dualWideCameraButton, mode: .tripleOnly)
+        addButton(button: proceed2ultraWideCameraButton, title: "超広角カメラ", topAnchorTarget: proceed2tripleCameraButton, mode: .ultraWideOnly)
+        addButton(button: proceed2telescopeCameraButton, title: "望遠カメラ", topAnchorTarget: proceed2ultraWideCameraButton, mode: .telescopeOnly)
+        addButton(button: proceed2frontCameraButton, title: "フロントカメラ", topAnchorTarget: proceed2telescopeCameraButton, mode: .frontOnly)
+        addButton(button: proceed2trueDepthCameraButton, title: "トゥルーデプスカメラ", topAnchorTarget: proceed2frontCameraButton, mode: .trueDepthOnly)
+        addButton(button: proceed2backAndFrontCameraButton, title: "ノーマルバック&フロントカメラ", topAnchorTarget: proceed2trueDepthCameraButton, mode: .backAndFront)
+
+        contentView.bottomAnchor.constraint(equalTo: proceed2backAndFrontCameraButton.bottomAnchor, constant: safeAreaBottom).isActive = true
     }
 
     private func addButton(button: UIButton, title: String, topAnchorTarget prevButton: UIButton, mode: Mode) {
@@ -160,5 +164,39 @@ final class ViewControllerRepresentable: UIViewControllerRepresentable {
 struct ViewController_Previews: PreviewProvider {
     static var previews: some View {
         ViewControllerRepresentable()
+    }
+}
+
+extension UIViewController {
+    // ref: https://stackoverflow.com/a/46831519/15474670
+    var safeAreaTop: CGFloat {
+        guard #available(iOS 11.0, *) else {
+            return 0
+        }
+        guard #available(iOS 13.0, *) else {
+            guard let window = UIApplication.shared.keyWindow else {
+                return 0
+            }
+            return window.safeAreaInsets.top
+        }
+        guard let window = UIApplication.shared.windows.first else {
+            return 0
+        }
+        return window.safeAreaInsets.top
+    }
+    var safeAreaBottom: CGFloat {
+        guard #available(iOS 11.0, *) else {
+            return 0
+        }
+        guard #available(iOS 13.0, *) else {
+            guard let window = UIApplication.shared.keyWindow else {
+                return 0
+            }
+            return window.safeAreaInsets.bottom
+        }
+        guard let window = UIApplication.shared.windows.first else {
+            return 0
+        }
+        return window.safeAreaInsets.bottom
     }
 }
