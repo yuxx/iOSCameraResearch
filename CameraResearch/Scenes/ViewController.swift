@@ -46,11 +46,10 @@ final class ViewController: UIViewController {
 
         contentView.translatesAutoresizingMaskIntoConstraints = false
         contentView.widthAnchor.constraint(equalTo: scrollView.widthAnchor).isActive = true
-        contentView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.heightAnchor).isActive = true
-        contentView.topAnchor.constraint(equalTo: scrollView.topAnchor, constant: -safeAreaTop).isActive = true
+        contentView.topAnchor.constraint(equalTo: scrollView.topAnchor).isActive = true
         contentView.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor).isActive = true
         contentView.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor).isActive = true
-        contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: safeAreaBottom).isActive = true
+        contentView.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor).isActive = true
 
         view.backgroundColor = .white
         scrollView.backgroundColor = .lightGray
@@ -164,7 +163,11 @@ final class ViewControllerRepresentable: UIViewControllerRepresentable {
 @available(iOS 13.0, *)
 struct ViewController_Previews: PreviewProvider {
     static var previews: some View {
-        ViewControllerRepresentable()
+        Group {
+            ViewControllerRepresentable()
+            ViewControllerRepresentable()
+                .previewDevice("iPhone 13 Pro Max")
+        }
     }
 }
 
