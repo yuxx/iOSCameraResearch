@@ -9,46 +9,6 @@ protocol PhotoShootDelegate {
 
 @available(iOS 13.0, *)
 final class Camera4iOS13OrAboveViewController: UIViewController {
-    enum CameraSide {
-        case front
-            , back
-    }
-    enum FrontCameraMode {
-        case normalWideAngle
-            , trueDepth
-        var captureDevices: [AVCaptureDevice.DeviceType] {
-            switch self {
-            case .normalWideAngle:
-                return [.builtInWideAngleCamera]
-            case .trueDepth:
-                return [.builtInTrueDepthCamera]
-            }
-        }
-    }
-    enum BackCameraMode {
-        case normalWideAngle
-            , dual
-            , dualWideAngle
-            , triple
-            , ultraWide
-            , telescope
-        var captureDevices: [AVCaptureDevice.DeviceType] {
-            switch self {
-            case .normalWideAngle:
-                return [.builtInWideAngleCamera]
-            case .dual:
-                return [.builtInDualCamera]
-            case .dualWideAngle:
-                return [.builtInDualWideCamera]
-            case .triple:
-                return [.builtInTripleCamera]
-            case .ultraWide:
-                return [.builtInUltraWideCamera]
-            case .telescope:
-                return [.builtInTelephotoCamera]
-            }
-        }
-    }
     private var defaultCameraSide: CameraSide
     private var currentCameraSide: CameraSide
     private var frontCameraMode: FrontCameraMode?
@@ -691,6 +651,58 @@ extension Camera4iOS13OrAboveViewController: AVCapturePhotoCaptureDelegate {
             // NOTE: フォトライブラリへ保存
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
             UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
+        }
+    }
+}
+
+@available(iOS 13.0, *)
+extension Camera4iOS13OrAboveViewController {
+    enum CameraSide {
+        case front
+            , back
+    }
+}
+
+@available(iOS 13.0, *)
+extension Camera4iOS13OrAboveViewController {
+    enum FrontCameraMode {
+        case normalWideAngle
+            , trueDepth
+        var captureDevices: [AVCaptureDevice.DeviceType] {
+            switch self {
+            case .normalWideAngle:
+                return [.builtInWideAngleCamera]
+            case .trueDepth:
+                return [.builtInTrueDepthCamera]
+            }
+        }
+    }
+}
+
+@available(iOS 13.0, *)
+extension Camera4iOS13OrAboveViewController {
+    enum BackCameraMode {
+        case normalWideAngle
+            , dual
+            , dualWideAngle
+            , triple
+            , ultraWide
+            , telescope
+        var captureDevices: [AVCaptureDevice.DeviceType] {
+            switch self {
+            case .normalWideAngle:
+                return [.builtInWideAngleCamera]
+            case .dual:
+                return [.builtInDualCamera]
+            case .dualWideAngle:
+                return [.builtInDualWideCamera]
+            case .triple:
+                return [.builtInTripleCamera]
+            case .ultraWide:
+                return [.builtInUltraWideCamera]
+            case .telescope:
+                return [.builtInTelephotoCamera]
+            }
         }
     }
 }
