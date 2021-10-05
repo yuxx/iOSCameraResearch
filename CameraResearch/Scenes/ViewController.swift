@@ -30,6 +30,7 @@ final class ViewController: UIViewController {
     let contentView: UIView = UIView()
 
     override func viewDidLoad() {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         super.viewDidLoad()
 
         view.frame = CGRect(origin: .zero, size: UIScreen.main.bounds.size)

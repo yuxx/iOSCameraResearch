@@ -36,7 +36,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
     private var shootingButtonPortraitGuides: [NSLayoutConstraint]!
     private var shootingButtonLandscapeLeftGuides: [NSLayoutConstraint]!
-    private var shootingButtonLandscapeRightYGuides: [NSLayoutConstraint]!
+    private var shootingButtonLandscapeRightGuides: [NSLayoutConstraint]!
     private var shootingButtonPortraitUpsideDownGuides: [NSLayoutConstraint]! // not work on device with notch
 
     private var autoFocusAdjustTimer: Timer?
@@ -62,7 +62,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
         super.init(nibName: nil, bundle: nil)
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -132,6 +132,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         guard orientation == .portrait || orientation == .landscapeLeft || orientation == .landscapeRight else {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
                 + "\nupside down is not supported."
+                + "\norientation: \(orientation)"
                 , level: .err)
             return
         }
@@ -235,17 +236,6 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             + "\n\t\t.maxAvailableVideoZoomFactor: \(currentCamera.maxAvailableVideoZoomFactor)"
             + "\n\t\t.activeFormat.videoMaxZoomFactor: \(currentCamera.activeFormat.videoMaxZoomFactor)"
             , level: .dbg)
-        cameraObservation = currentCamera.observe(\.isConnected) { [weak self] camera, changeValue in
-            guard let self = self, let isConnected = changeValue.newValue, isConnected else {
-                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
-                return
-            }
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-            self.modifyZoomFactor(byScale: 2, isFix: true)
-            if let cameraObservation = self.cameraObservation {
-                cameraObservation.invalidate()
-            }
-        }
     }
 
     private func setupCameraIO() {
@@ -299,6 +289,10 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
             + "\nconnection.videoOrientation: \(connection.videoOrientation)"
             , level: .dbg)
+    }
+
+    private func setupGesture() {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tapGesture(_:))))
         view.addGestureRecognizer(UIPinchGestureRecognizer(target: self, action: #selector(pinchGesture(_:))))
     }
@@ -424,7 +418,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
             shootingButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -30),
         ]
 
-        shootingButtonLandscapeRightYGuides = [
+        shootingButtonLandscapeRightGuides = [
             shootingButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             shootingButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 30),
         ]
@@ -549,7 +543,6 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
     // ref: https://qiita.com/jumperson/items/723737ed497fe2c6f2aa
     private func adjustAutoFocus(focusPoint: CGPoint, focusMode: AVCaptureDevice.FocusMode, exposeMode: AVCaptureDevice.ExposureMode) {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tfocusPoint: \(focusPoint)", level: .dbg)
         focusIndicator.center = focusPoint
         focusIndicator.isHidden = false
         UIViewPropertyAnimator.runningPropertyAnimator(withDuration: 0.5, delay: 0, options: []) {
