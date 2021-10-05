@@ -23,6 +23,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
     private let shootingButton: UIButton = UIButton()
     private let closeButton: UIButton = UIButton()
+    private let toggleCameraSideButton: UIButton = UIButton()
 
     private var _photoOut: Any?
     private var photoOut: AVCapturePhotoOutput? {
@@ -39,15 +40,19 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     private var shootingButtonLandscapeRightGuides: [NSLayoutConstraint]!
     private var shootingButtonPortraitUpsideDownGuides: [NSLayoutConstraint]! // not work on device with notch
 
-    private var autoFocusAdjustTimer: Timer?
     private let focusIndicator: UIView = UIView()
     private let coreMotionManager: CMMotionManager = CMMotionManager()
-    private var lastTouchFocusDate: Date?
 
-
-    private let sessionQueue: DispatchQueue = DispatchQueue(label: "session queue")
     private var exZoomFactor: CGFloat = 1.0
-    private var cameraObservation: NSKeyValueObservation?
+
+    private var currentOrientation: AVCaptureVideoOrientation = .portrait {
+        didSet {
+            guard let connection = previewLayer?.connection else {
+                return
+            }
+            connection.videoOrientation = currentOrientation
+        }
+    }
 
     init(defaultCameraSide: CameraSide, frontCameraMode: FrontCameraMode?, backCameraMode: BackCameraMode?) {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
@@ -87,9 +92,9 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         setupAVCaptureSession()
         setupAVCaptureDevice()
         setupCameraIO()
-        captureSession.startRunning()
 
         setupPreviewLayer()
+        setupGesture()
 
         setupCameraControlButton()
 
@@ -119,9 +124,6 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-        if let autoFocusAdjustTimer = autoFocusAdjustTimer {
-            autoFocusAdjustTimer.invalidate()
-        }
         captureSession.stopRunning()
         stopMotionAutoFocus()
         super.viewDidDisappear(animated)
@@ -142,7 +144,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
                 , level: .err)
             return
         }
-        connection.videoOrientation = Self.getOrientationAsAVCaptureVideoOrientation()
+        adjustOrientationForAVCaptureVideoOrientation()
 
         previewLayer.frame = view.frame
         setupButtonLocation()
@@ -262,33 +264,27 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
                 + "\nerror: \(error)"
                 , level: .err)
         }
+        captureSession.startRunning()
     }
 
     private func setupPreviewLayer() {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
-        previewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        guard let previewLayer = previewLayer else {
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-                + "\npreviewLayer is nil"
-                , level: .err)
-            return
-        }
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-            + "\npreviewLayer.frame: \(previewLayer.frame)"
-            , level: .dbg)
-        previewLayer.videoGravity = AVLayerVideoGravity.resizeAspect
-        guard let connection = previewLayer.connection else {
+        let newPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
+        newPreviewLayer.videoGravity = .resizeAspect
+        guard let connection = newPreviewLayer.connection else {
             debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
                 + "\npreviewLayer.connection is nil"
                 , level: .err)
             return
         }
-        connection.videoOrientation = Self.getOrientationAsAVCaptureVideoOrientation()
-        previewLayer.frame = view.frame
-        view.layer.insertSublayer(previewLayer, at: 0)
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-            + "\nconnection.videoOrientation: \(connection.videoOrientation)"
-            , level: .dbg)
+        newPreviewLayer.frame = view.frame
+        if let previewLayer = previewLayer {
+            view.layer.replaceSublayer(previewLayer, with: newPreviewLayer)
+            // todo: フリップアニメーション ref: https://superhahnah.com/swift-camera-position-switching/
+        } else {
+            view.layer.insertSublayer(newPreviewLayer, at: 0)
+        }
+        previewLayer = newPreviewLayer
+        adjustOrientationForAVCaptureVideoOrientation()
     }
 
     private func setupGesture() {
@@ -362,31 +358,31 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         }
     }
 
-    static func getOrientationAsAVCaptureVideoOrientation() -> AVCaptureVideoOrientation {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
-            + "\nUIDevice.current.orientation: \(UIDevice.current.orientation)"
-            , level: .dbg)
-        switch UIDevice.current.orientation {
-        case .portraitUpsideDown:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportraitUpsideDown", level: .dbg)
-            return .portraitUpsideDown
-        case .landscapeLeft:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeLeft", level: .dbg)
-            // NOTE: カメラ左右はデバイスの向きと逆
-            return .landscapeRight
-        case .landscapeRight:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeRight", level: .dbg)
-            // NOTE: カメラ左右はデバイスの向きと逆
-            return .landscapeLeft
-        default:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportrait", level: .dbg)
-            return .portrait
-        }
+    private func adjustOrientationForAVCaptureVideoOrientation() {
+        let newOrientation: AVCaptureVideoOrientation = {
+            switch UIDevice.current.orientation {
+            case .portrait:
+                return .portrait
+            case .portraitUpsideDown:
+                return .portraitUpsideDown
+            case .landscapeLeft:
+                // NOTE: カメラ左右はデバイスの向きと逆
+                return .landscapeRight
+            case .landscapeRight:
+                // NOTE: カメラ左右はデバイスの向きと逆
+                return .landscapeLeft
+            default:
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlastOrientation: \(currentOrientation)", level: .dbg)
+                return currentOrientation
+            }
+        }()
+        currentOrientation = newOrientation
     }
 
     private func setupCameraControlButton() {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         setupShootingButton()
+        setupToggleCameraSideButton()
         setupCloseButton()
         // todo: その他ボタンや表示
         setupButtonLocation()
@@ -439,34 +435,72 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
         shooting()
     }
 
-    private func setupButtonLocation() {
-        NSLayoutConstraint.deactivate(
-            shootingButtonPortraitGuides
-                + shootingButtonLandscapeLeftGuides
-                + shootingButtonLandscapeRightYGuides
-                + shootingButtonPortraitUpsideDownGuides
-        )
-        switch UIDevice.current.orientation {
-        case .portraitUpsideDown:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportraitUpsideDown", level: .dbg)
-            NSLayoutConstraint.activate(shootingButtonPortraitUpsideDownGuides)
-        case .landscapeLeft:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeLeft", level: .dbg)
-            NSLayoutConstraint.activate(shootingButtonLandscapeLeftGuides)
-            return
-        case .landscapeRight:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeRight", level: .dbg)
-            NSLayoutConstraint.activate(shootingButtonLandscapeRightYGuides)
-            return
-        default:
-            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportrait", level: .dbg)
-            NSLayoutConstraint.activate(shootingButtonPortraitGuides)
-            return
+    private func setupToggleCameraSideButton() {
+        toggleCameraSideButton.setImage(UIImage(systemName: "arrow.triangle.2.circlepath")?.withRenderingMode(.alwaysTemplate), for: .normal)
+        toggleCameraSideButton.tintColor = .white
+        toggleCameraSideButton.sizeToFit()
+        toggleCameraSideButton.imageView?.contentMode = .scaleAspectFit
+        toggleCameraSideButton.contentHorizontalAlignment = .fill
+        toggleCameraSideButton.contentVerticalAlignment = .fill
+        toggleCameraSideButton.addTarget(self, action: #selector(toggleCameraSide(_:)), for: .touchUpInside)
+        view.addSubview(toggleCameraSideButton)
+
+        toggleCameraSideButton.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            toggleCameraSideButton.widthAnchor.constraint(equalToConstant: 50),
+            toggleCameraSideButton.heightAnchor.constraint(equalToConstant: 50),
+            toggleCameraSideButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -10),
+            toggleCameraSideButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -30),
+        ])
+    }
+
+    @objc private func toggleCameraSide(_ sender: UIButton) {
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+        if currentCameraSide == .front {
+            guard backCamera != nil else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+                return
+            }
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tto back camera", level: .dbg)
+            currentCamera = backCamera
+            currentCameraSide = .back
+        } else {
+            guard frontCamera != nil else {
+                debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .err)
+                return
+            }
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tto front camera", level: .dbg)
+            currentCamera = frontCamera
+            currentCameraSide = .front
         }
+
+        removeCaptureSession()
+        // NOTE: セッションを作り直さないと動作が重いので作り直すのが正しそう
+        captureSession = AVCaptureSession()
+        setupCameraIO()
+        setupPreviewLayer()
+    }
+
+    // ref: https://superhahnah.com/swift-camera-position-switching/
+    private func removeCaptureSession() {
+        captureSession.stopRunning()
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)"
+            + "\ncaptureSession.outputs.count: \(captureSession.outputs.count)"
+            + "\ncaptureSession.inputs.count: \(captureSession.inputs.count)"
+            , level: .dbg)
+        captureSession.outputs.forEach {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            captureSession.removeOutput($0)
+        }
+        captureSession.inputs.forEach {
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
+            captureSession.removeInput($0)
+        }
+        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
     }
 
     private func setupCloseButton() {
-        debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         closeButton.setImage(UIImage(systemName: "multiply")?.withRenderingMode(.alwaysTemplate), for: .normal)
         closeButton.tintColor = .white
         closeButton.sizeToFit()
@@ -489,6 +523,32 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
     @objc func closeCamera(_ sender: UIButton) {
         debuglog("\(String(describing: Self.self))::\(#function)@\(#line)", level: .dbg)
         dismiss(animated: true)
+    }
+
+    private func setupButtonLocation() {
+        NSLayoutConstraint.deactivate(
+            shootingButtonPortraitGuides
+                + shootingButtonLandscapeLeftGuides
+                + shootingButtonLandscapeRightGuides
+                + shootingButtonPortraitUpsideDownGuides
+        )
+        switch UIDevice.current.orientation {
+        case .portraitUpsideDown:
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportraitUpsideDown", level: .dbg)
+            NSLayoutConstraint.activate(shootingButtonPortraitUpsideDownGuides)
+        case .landscapeLeft:
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeLeft", level: .dbg)
+            NSLayoutConstraint.activate(shootingButtonLandscapeLeftGuides)
+            return
+        case .landscapeRight:
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tlandscapeRight", level: .dbg)
+            NSLayoutConstraint.activate(shootingButtonLandscapeRightGuides)
+            return
+        default:
+            debuglog("\(String(describing: Self.self))::\(#function)@\(#line)\tportrait", level: .dbg)
+            NSLayoutConstraint.activate(shootingButtonPortraitGuides)
+            return
+        }
     }
 
     // ref: https://qiita.com/jumperson/items/723737ed497fe2c6f2aa
@@ -522,7 +582,7 @@ final class Camera4iOS13OrAboveViewController: UIViewController {
                 return
             }
             let intensity = abs(acceleration.x) + abs(acceleration.y) + abs(acceleration.z)
-            guard intensity > 1.5 else {
+            guard intensity > 2 else {
                 return
             }
             guard let self = self else {
